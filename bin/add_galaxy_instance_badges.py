@@ -105,22 +105,11 @@ These badges are the results of regularly checking in with your Galaxy
 instance to see if you support the various training courses that are available
 to end users. This requires having all of the appropriate tools installed and
 possibly datasets in specifically named data libraries.
-</p>
-<table>
-    <thead>
-          """)
-
-    index_html.write("<tr>")
-    index_html.write('<th>Instance</th>')
-    for category in data:
-        for training in data[category]:
-            index_html.write('<th>' + training + '</th>')
-    index_html.write("</tr>")
-    index_html.write("</thead><tbody>")
+</p>""")
 
     # All instances, not just checked
     for instance in instances:
-        index_html.write('<tr><td>' + instance + '</td><td>')
+        index_html.write('<h2 id="' + safe_name(instance, dashes=True) + '">' + instance + '</h2><ul>')
         for category in data:
             # All trainings, not just those available
             for training in data[category]:
@@ -133,8 +122,12 @@ possibly datasets in specifically named data libraries.
                 output_filepath = os.path.join(args.output, output_filename)
                 # Copy the badge to a per-instance named .svg file.
                 shutil.copy(real_badge_path, output_filepath)
-                # Write the table column
-                index_html.write('<td><img src="' + output_filename + '"/></td>')
 
-        index_html.write('</td></tr>')
-    index_html.write("</tbody></table></body></html>")
+                # We'll only place the badge in the HTML if the training is
+                # supported (but the unavailable badge will still be available
+                # in case they ever go out of compliance.)
+                if is_supported:
+                    index_html.write('<li><img src="' + output_filename + '"/></li>')
+        index_html.write('</ul>')
+
+    index_html.write("</body></html>")
