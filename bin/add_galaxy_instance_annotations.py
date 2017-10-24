@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import json
 import os
 import argparse
 import yaml
@@ -21,16 +21,16 @@ def extract_public_galaxy_servers_tools():
     servers = extract_public_galaxy_servers()
     server_tools = {}
     for index, server in servers.iterrows():
-        print(server['name'])
+        print(server['name'], end=' ')
         # request the tools via the API
-        url = '%s/api/tools' % server['url']
+        url = '%s/api/tools' % server['url'].rstrip('/')
         try:
-            response = requests.get(url)
+            response = requests.get(url, timeout=20)
         except:
             print("Error of connection")
         # check status
         if response.status_code != requests.codes.ok:
-            print("Bad status")
+            print("Bad status (%s)" % response.status_code)
             continue
         # check content
         if response.text.find("</html>") != -1:
@@ -38,11 +38,18 @@ def extract_public_galaxy_servers_tools():
             continue
         # extract the list of tools in this instance
         found_tools = set()
-        for section in response.json():
+        try:
+            response_json = response.json()
+        except json.decoder.JSONDecodeError:
+            print("Invalid JSON")
+            continue
+
+        for section in response_json:
             if 'elems' in section:
                 for tool in section['elems']:
                     found_tools.add('/'.join( tool['id'].split('/')[:4] ))
         # save the server with its tools
+        print()
         server_tools[server['name']] = {
             'url': server['url'],
             'tools': found_tools
@@ -68,8 +75,7 @@ def check_tutorial(tool_filepath, serv_tools):
     for server in serv_tools:
         # check overlap
         res = exp_tools.issubset(serv_tools[server]['tools'])
-        if res:
-            cons_servers[server] = {'url': serv_tools[server]['url']}
+        cons_servers[server] = {'url': serv_tools[server]['url'], 'supported': res}
     return cons_servers
 
 
