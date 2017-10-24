@@ -11,15 +11,6 @@ import yaml
 import csv
 
 
-def extract_public_galaxy_servers(public_servers_url):
-    """Extract a list of dictionaries for each public server."""
-    csv_contents = requests.get(public_servers_url).text.splitlines()
-    reader = csv.reader(csv_contents)
-    header = next(reader)
-    for row in reader:
-        yield dict(zip(header, row))
-
-
 def discover_trainings(topics_dir):
     """Auto-discover all topic metadata files."""
     for training in glob.glob(os.path.join(topics_dir, '*', 'metadata.yaml')):
@@ -27,6 +18,14 @@ def discover_trainings(topics_dir):
             training_data = yaml.load(handle)
             for material in training_data['material']:
                 yield material['name'], material['title']
+
+
+def discover_training_counts(topics_dir):
+    """Auto-discover all topic metadata files."""
+    for training in glob.glob(os.path.join(topics_dir, '*', 'metadata.yaml')):
+        with open(training, 'r') as handle:
+            training_data = yaml.load(handle)
+            yield training_data['name'], len(training_data['material'])
 
 
 def safe_name(server, dashes=True):
@@ -40,13 +39,11 @@ def safe_name(server, dashes=True):
     return server
 
 
-def get_badge_path(training, supported):
+def get_badge_path(label, value, color):
     """Return a string representing the expected badge filename. Returns something like 'Training Name|Supported' or 'Training Name|Unsupported'."""
-    safe_training_name = training.replace('@', '%40').replace(' ', '%20').replace('-', '--')
-    if supported:
-        return '%s-%s-green.svg' % (safe_training_name, 'Supported')
-
-    return '%s-%s-lightgrey.svg' % (safe_training_name, 'Unsupported')
+    safe_label = label.replace('@', '%40').replace(' ', '%20').replace('-', '--')
+    safe_value = value.replace('@', '%40').replace(' ', '%20').replace('-', '--')
+    return '%s-%s-%s.svg' % (safe_label, safe_value, color)
 
 
 def realise_badge(badge, badge_cache_dir):
@@ -78,6 +75,7 @@ if __name__ == '__main__':
     if not os.path.exists(args.topics_directory) and os.path.is_dir(args.topics_directory):
         raise Exception("Invalid topics directory")
     trainings = dict(discover_trainings(args.topics_directory))
+    training_counts = dict(discover_training_counts(args.topics_directory))
     training_keys = sorted(trainings.keys())
     if len(trainings) == 0:
         raise Exception("No trainings discovered!")
@@ -95,7 +93,14 @@ if __name__ == '__main__':
     with open(args.instances, 'r') as handle:
         data = yaml.load(handle)
 
-    instances = list(extract_public_galaxy_servers(args.public_server_list))
+    # Collect a list of instances seen
+    instances = []
+    for topic in data:
+        for training in data[topic]:
+            for instance in data[topic][training]:
+                instances.append(instance)
+    instances = sorted(set(instances))
+
     index_html = open(os.path.join(args.output, 'index.html'), 'w')
 
     index_html.write("""
@@ -111,29 +116,58 @@ possibly datasets in specifically named data libraries.
 
     # All instances, not just checked
     for instance in instances:
-        index_html.write('<h2 id="' + safe_name(instance['name'], dashes=True) + '">' + instance['name'] + '</h2><ul>')
-        for category in data:
+        index_html.write('<h2 id="' + safe_name(instance, dashes=True) + '">' + instance + '</h2>')
+        index_html.write('<h3>Per-Training Badge</h3><ul>')
+        topic_counts = {}
+        for topic in data:
+            # Number of trainings in this topic that we support.
+            count = 0
             # All trainings, not just those available
-            for training in sorted(data[category]):
+            for training in sorted(data[topic]):
                 # If available, green badge
-                is_supported = training in data[category] and instance['name'] in data[category][training]
+                is_supported = training in data[topic] and instance in data[topic][training]
                 # Get a path to a (cached) badge file.
-                real_badge_path = realise_badge(get_badge_path(trainings[training], is_supported), CACHE_DIR)
+                real_badge_path = realise_badge(get_badge_path(
+                    trainings[training],
+                    'Supported' if is_supported else 'Unsupported',
+                    'green' if is_supported else 'lightgrey'
+                ), CACHE_DIR)
                 # Deteremine the per-instance output name
-                output_filename = safe_name(instance['name']) + '__' + safe_name(training, dashes=True) + '.svg'
+                output_filename = safe_name(instance) + '__' + safe_name(training, dashes=True) + '.svg'
                 output_filepath = os.path.join(args.output, output_filename)
                 # Copy the badge to a per-instance named .svg file.
                 shutil.copy(real_badge_path, output_filepath)
-                # print(instance['name'], category, training, is_supported, real_badge_path)
+                # print(instance['name'], topic, training, is_supported, real_badge_path)
                 # print('cp %s %s' % (real_badge_path, output_filepath))
 
                 # We'll only place the badge in the HTML if the training is
                 # supported (but the unavailable badge will still be available
                 # in case they ever go out of compliance.)
                 if is_supported:
+                    count += 1
                     index_html.write('<li><img src="' + output_filename + '"/></li>')
+            topic_counts[topic] = count
 
-                index_html.flush()
+        index_html.write('</ul><h3>Training Group Badges</h3><ul>')
+        for topic in data:
+            # Copy the badge to a per-instance named .svg file.
+            if float(topic_counts[topic]) / training_counts[topic] > 0.90:
+                color = 'green'
+            elif float(topic_counts[topic]) / training_counts[topic] > 0.25:
+                color = 'orange'
+            else:
+                color = 'red'
+
+            output_filename = safe_name(instance) + '__' + safe_name(topic, dashes=True) + '.svg'
+            output_filepath = os.path.join(args.output, output_filename)
+            shutil.copy(
+                realise_badge(get_badge_path(topic, '%s%%2f%s' % (topic_counts[topic], training_counts[topic]), color), CACHE_DIR),
+                output_filepath
+            )
+
+            if topic_counts[topic] > 0:
+                index_html.write('<li><img src="' + output_filename + '"/></li>')
         index_html.write('</ul>')
+
 
     index_html.write("</body></html>")
