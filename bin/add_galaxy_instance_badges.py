@@ -3,12 +3,10 @@ import argparse
 import glob
 import os
 import re
-import requests
 import shutil
 import subprocess
 import time
 import yaml
-import csv
 
 
 def discover_trainings(topics_dir):
@@ -18,14 +16,6 @@ def discover_trainings(topics_dir):
             training_data = yaml.load(handle)
             for material in training_data['material']:
                 yield material['name'], material['title']
-
-
-def discover_training_counts(topics_dir):
-    """Auto-discover all topic metadata files."""
-    for training in glob.glob(os.path.join(topics_dir, '*', 'metadata.yaml')):
-        with open(training, 'r') as handle:
-            training_data = yaml.load(handle)
-            yield training_data['name'], len(training_data['material'])
 
 
 def safe_name(server, dashes=True):
@@ -56,8 +46,7 @@ def realise_badge(badge, badge_cache_dir):
         ]
         subprocess.check_call(cmd)
         # Be nice to their servers
-        print('downloading %s' % badge)
-        # time.sleep(0.25)
+        time.sleep(1)
     return os.path.join(badge_cache_dir, badge)
 
 
@@ -75,7 +64,6 @@ if __name__ == '__main__':
     if not os.path.exists(args.topics_directory) and os.path.is_dir(args.topics_directory):
         raise Exception("Invalid topics directory")
     trainings = dict(discover_trainings(args.topics_directory))
-    training_counts = dict(discover_training_counts(args.topics_directory))
     training_keys = sorted(trainings.keys())
     if len(trainings) == 0:
         raise Exception("No trainings discovered!")
@@ -114,18 +102,24 @@ to end users. This requires having all of the appropriate tools installed and
 possibly datasets in specifically named data libraries.
 </p>""")
 
-    # All instances, not just checked
-    for instance in instances:
-        index_html.write('<h2 id="' + safe_name(instance, dashes=True) + '">' + instance + '</h2>')
-        index_html.write('<h3>Per-Training Badge</h3><ul>')
-        topic_counts = {}
-        for topic in data:
-            # Number of trainings in this topic that we support.
-            count = 0
-            # All trainings, not just those available
-            for training in sorted(data[topic]):
+    # Map of instance -> badges
+    instance_badges = {}
+    # Count of tutorials in each topic.
+    topic_counts = {}
+    for topic in data:
+        # Number of trainings in this topic that we support.
+        topic_counts[topic] = len(data[topic].keys())
+        # All trainings, not just those available
+        for training in sorted(data[topic]):
+            for instance in data[topic][training]:
+                if instance not in instance_badges:
+                    instance_badges[instance] = {}
+
+                if topic not in instance_badges[instance]:
+                    instance_badges[instance][topic] = []
+
                 # If available, green badge
-                is_supported = training in data[topic] and instance in data[topic][training]
+                is_supported = data[topic][training][instance]['supported']
                 # Get a path to a (cached) badge file.
                 real_badge_path = realise_badge(get_badge_path(
                     trainings[training],
@@ -144,16 +138,33 @@ possibly datasets in specifically named data libraries.
                 # supported (but the unavailable badge will still be available
                 # in case they ever go out of compliance.)
                 if is_supported:
-                    count += 1
-                    index_html.write('<li><img src="' + output_filename + '"/></li>')
-            topic_counts[topic] = count
+                    instance_badges[instance][topic].append(output_filename)
+                # else:
+                    # print(instance, 'does not support', topic, training)
 
-        index_html.write('</ul><h3>Training Group Badges</h3><ul>')
-        for topic in data:
-            # Copy the badge to a per-instance named .svg file.
-            if float(topic_counts[topic]) / training_counts[topic] > 0.90:
+    # All instances, not just checked
+    for instance in sorted(instance_badges):
+        total = sum([len(instance_badges[instance][topic]) for topic in instance_badges[instance]])
+
+        if total == 0:
+            continue
+
+        index_html.write('<h2 id="' + safe_name(instance, dashes=True) + '">' + instance + '</h2>')
+        index_html.write('<h3>Per-Training Badge</h3>')
+        index_html.write('<ul>')
+        for topic in instance_badges[instance]:
+            for badge in instance_badges[instance][topic]:
+                index_html.write('<li><img src="' + badge + '"/></li>')
+        index_html.write('</ul>')
+        index_html.write('<h3>Training Group Badges</h3>')
+        index_html.write('<ul>')
+        for topic in instance_badges[instance]:
+            # Get the number of badges in this topic.
+            count = len(instance_badges[instance][topic])
+
+            if float(count) / topic_counts[topic] > 0.90:
                 color = 'green'
-            elif float(topic_counts[topic]) / training_counts[topic] > 0.25:
+            elif float(count) / topic_counts[topic] > 0.25:
                 color = 'orange'
             else:
                 color = 'red'
@@ -161,13 +172,12 @@ possibly datasets in specifically named data libraries.
             output_filename = safe_name(instance) + '__' + safe_name(topic, dashes=True) + '.svg'
             output_filepath = os.path.join(args.output, output_filename)
             shutil.copy(
-                realise_badge(get_badge_path(topic, '%s%%2f%s' % (topic_counts[topic], training_counts[topic]), color), CACHE_DIR),
+                realise_badge(get_badge_path(topic, '%s%%2f%s' % (count, topic_counts[topic]), color), CACHE_DIR),
                 output_filepath
             )
 
-            if topic_counts[topic] > 0:
+            if count > 0:
                 index_html.write('<li><img src="' + output_filename + '"/></li>')
         index_html.write('</ul>')
-
 
     index_html.write("</body></html>")
