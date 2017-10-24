@@ -42,15 +42,16 @@ def safe_name(server, dashes=True):
 
 def get_badge_path(training, supported):
     """Return a string representing the expected badge filename. Returns something like 'Training Name|Supported' or 'Training Name|Unsupported'."""
+    safe_training_name = training.replace('@', '%40').replace(' ', '%20').replace('-', '--')
     if supported:
-        return '%s-%s-green.svg' % (training, 'Supported')
+        return '%s-%s-green.svg' % (safe_training_name, 'Supported')
 
-    return '%s-%s-gray.svg' % (training, 'Unsupported')
+    return '%s-%s-lightgrey.svg' % (safe_training_name, 'Unsupported')
 
 
 def realise_badge(badge, badge_cache_dir):
     """Download the badge to the badge_cache_dir (if needed) and return this real path to the user."""
-    if not os.path.exists(badge, badge_cache_dir):
+    if not os.path.exists(os.path.join(badge_cache_dir, badge)):
         # Download the missing image
         cmd = [
             'wget', 'https://img.shields.io/badge/%s' % badge,
@@ -58,7 +59,8 @@ def realise_badge(badge, badge_cache_dir):
         ]
         subprocess.check_call(cmd)
         # Be nice to their servers
-        time.sleep(1.5)
+        print('downloading %s' % badge)
+        # time.sleep(0.25)
     return os.path.join(badge_cache_dir, badge)
 
 
@@ -109,10 +111,10 @@ possibly datasets in specifically named data libraries.
 
     # All instances, not just checked
     for instance in instances:
-        index_html.write('<h2 id="' + safe_name(instance, dashes=True) + '">' + instance + '</h2><ul>')
+        index_html.write('<h2 id="' + safe_name(instance['name'], dashes=True) + '">' + instance['name'] + '</h2><ul>')
         for category in data:
             # All trainings, not just those available
-            for training in data[category]:
+            for training in sorted(data[category]):
                 # If available, green badge
                 is_supported = training in data[category] and instance['name'] in data[category][training]
                 # Get a path to a (cached) badge file.
@@ -122,12 +124,16 @@ possibly datasets in specifically named data libraries.
                 output_filepath = os.path.join(args.output, output_filename)
                 # Copy the badge to a per-instance named .svg file.
                 shutil.copy(real_badge_path, output_filepath)
+                # print(instance['name'], category, training, is_supported, real_badge_path)
+                # print('cp %s %s' % (real_badge_path, output_filepath))
 
                 # We'll only place the badge in the HTML if the training is
                 # supported (but the unavailable badge will still be available
                 # in case they ever go out of compliance.)
                 if is_supported:
                     index_html.write('<li><img src="' + output_filename + '"/></li>')
+
+                index_html.flush()
         index_html.write('</ul>')
 
     index_html.write("</body></html>")
