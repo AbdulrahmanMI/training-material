@@ -118,7 +118,9 @@ layout: base
                                     </a>
                                     <ul class="dropdown-menu">
                                     {% for inst in instances[topic.name][material.name] %}
+                                        {% if inst[1].supported %}
                                         <li><a href="{{ inst[1].url }}" title="{{ inst[0] }}">{{ inst[0] }}</a></li>
+                                        {% endif %}
                                     {% endfor %}
                                     </ul>
                                 {% endif %}
