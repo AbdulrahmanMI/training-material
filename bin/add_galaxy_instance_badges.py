@@ -50,6 +50,19 @@ def realise_badge(badge, badge_cache_dir):
     return os.path.join(badge_cache_dir, badge)
 
 
+def badge_it(label, value, color, CACHE_DIR, instance, identifier, output_dir):
+    # Get a path to a (cached) badge file.
+    real_badge_path = realise_badge(get_badge_path(
+        label, value, color
+    ), CACHE_DIR)
+    # Deteremine the per-instance output name
+    output_filename = safe_name(instance) + '__' + safe_name(identifier, dashes=True) + '.svg'
+    output_filepath = os.path.join(args.output, output_filename)
+    # Copy the badge to a per-instance named .svg file.
+    shutil.copy(real_badge_path, output_filepath)
+    return output_filename
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Build the badge directory for instances to use.')
     parser.add_argument('--public-server-list', help='Url to access the public galaxy server list at',
@@ -86,8 +99,17 @@ if __name__ == '__main__':
     for topic in data:
         for training in data[topic]:
             for instance in data[topic][training]:
+                data[topic][training][instance]['supported'] = True
                 instances.append(instance)
     instances = sorted(set(instances))
+
+    # Mark the unsupported ones as such for easier processing later.
+    for topic in data:
+        for training in data[topic]:
+            for instance in instances:
+                # Not in one of the existing supported ones
+                if instance not in data[topic][training]:
+                    data[topic][training][instance] = {'supported': False}
 
     index_html = open(os.path.join(args.output, 'index.html'), 'w')
 
@@ -120,27 +142,23 @@ possibly datasets in specifically named data libraries.
 
                 # If available, green badge
                 is_supported = data[topic][training][instance]['supported']
-                # Get a path to a (cached) badge file.
-                real_badge_path = realise_badge(get_badge_path(
-                    trainings[training],
-                    'Supported' if is_supported else 'Unsupported',
-                    'green' if is_supported else 'lightgrey'
-                ), CACHE_DIR)
-                # Deteremine the per-instance output name
-                output_filename = safe_name(instance) + '__' + safe_name(training, dashes=True) + '.svg'
-                output_filepath = os.path.join(args.output, output_filename)
-                # Copy the badge to a per-instance named .svg file.
-                shutil.copy(real_badge_path, output_filepath)
-                # print(instance['name'], topic, training, is_supported, real_badge_path)
-                # print('cp %s %s' % (real_badge_path, output_filepath))
-
                 # We'll only place the badge in the HTML if the training is
                 # supported (but the unavailable badge will still be available
                 # in case they ever go out of compliance.)
                 if is_supported:
+                    output_filename = badge_it(
+                        trainings[training],
+                        'Supported', 'green',
+                        CACHE_DIR, instance, training, args.output
+                    )
                     instance_badges[instance][topic].append(output_filename)
-                # else:
-                    # print(instance, 'does not support', topic, training)
+                else:
+                    badge_it(
+                        trainings[training],
+                        'Unsupported', 'lightgrey',
+                        CACHE_DIR, instance, training, args.output
+                    )
+
 
     # All instances, not just checked
     for instance in sorted(instance_badges):
@@ -169,11 +187,9 @@ possibly datasets in specifically named data libraries.
             else:
                 color = 'red'
 
-            output_filename = safe_name(instance) + '__' + safe_name(topic, dashes=True) + '.svg'
-            output_filepath = os.path.join(args.output, output_filename)
-            shutil.copy(
-                realise_badge(get_badge_path(topic, '%s%%2f%s' % (count, topic_counts[topic]), color), CACHE_DIR),
-                output_filepath
+            output_filename = badge_it(
+                topic, '%s%%2f%s' % (count, topic_counts[topic]), color,
+                CACHE_DIR, instance, topic, args.output
             )
 
             if count > 0:

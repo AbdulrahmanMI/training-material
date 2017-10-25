@@ -75,7 +75,8 @@ def check_tutorial(tool_filepath, serv_tools):
     for server in serv_tools:
         # check overlap
         res = exp_tools.issubset(serv_tools[server]['tools'])
-        cons_servers[server] = {'url': serv_tools[server]['url'], 'supported': res}
+        if res:
+            cons_servers[server] = {'url': serv_tools[server]['url']}
     return cons_servers
 
 
