@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import argparse
 import glob
+from collections import defaultdict
 import os
 import re
 import shutil
@@ -15,7 +16,7 @@ def discover_trainings(topics_dir):
         with open(training, 'r') as handle:
             training_data = yaml.load(handle)
             for material in training_data['material']:
-                yield material['name'], material['title']
+                yield training.split('/')[-2], material['name'], material['title']
 
 
 def safe_name(server, dashes=True):
@@ -76,7 +77,13 @@ if __name__ == '__main__':
     # Validate training dir argument
     if not os.path.exists(args.topics_directory) and os.path.is_dir(args.topics_directory):
         raise Exception("Invalid topics directory")
-    trainings = dict(discover_trainings(args.topics_directory))
+    all_trainings = list(discover_trainings(args.topics_directory))
+    trainings = {x[1]: x[2] for x in all_trainings}
+
+    topic_counts = defaultdict(int)
+    for (topic, _, _) in all_trainings:
+        topic_counts[topic] += 1
+
     training_keys = sorted(trainings.keys())
     if len(trainings) == 0:
         raise Exception("No trainings discovered!")
@@ -127,10 +134,7 @@ possibly datasets in specifically named data libraries.
     # Map of instance -> badges
     instance_badges = {}
     # Count of tutorials in each topic.
-    topic_counts = {}
     for topic in data:
-        # Number of trainings in this topic that we support.
-        topic_counts[topic] = len(data[topic].keys())
         # All trainings, not just those available
         for training in sorted(data[topic]):
             for instance in data[topic][training]:
