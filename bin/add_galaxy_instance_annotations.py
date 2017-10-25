@@ -21,7 +21,7 @@ def extract_public_galaxy_servers_tools():
     servers = extract_public_galaxy_servers()
     server_tools = {}
     for index, server in servers.iterrows():
-        print(server['name'], end=' ')
+        print(server['name'])
         # request the tools via the API
         url = '%s/api/tools' % server['url'].rstrip('/')
         try:
@@ -49,7 +49,6 @@ def extract_public_galaxy_servers_tools():
                 for tool in section['elems']:
                     found_tools.add('/'.join( tool['id'].split('/')[:4] ))
         # save the server with its tools
-        print()
         server_tools[server['name']] = {
             'url': server['url'],
             'tools': found_tools
